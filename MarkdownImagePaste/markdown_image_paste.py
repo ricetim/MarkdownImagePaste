@@ -219,5 +219,82 @@ def _dib_to_bmp_bytes(dib_data):
 
 
 # ---------------------------------------------------------------------------
-# Sublime Text command  (implemented in Task 3)
+# Sublime Text command
 # ---------------------------------------------------------------------------
+
+class MarkdownImagePasteCommand(sublime_plugin.TextCommand):
+    """
+    Intercepts Ctrl+V in markdown files.
+    Saves clipboard image to .images/ and inserts markdown link.
+    Delegates to built-in paste when clipboard has no image.
+    """
+
+    def run(self, edit):
+        if not _clipboard_has_image():
+            self.view.run_command('paste')
+            return
+
+        file_path = self.view.file_name()
+        if not file_path:
+            sublime.status_message(
+                'MarkdownImagePaste: save the file before pasting an image'
+            )
+            return
+
+        image_data, ext = _get_clipboard_image()
+        if not image_data:
+            # Clipboard changed between check and read — fall through
+            self.view.run_command('paste')
+            return
+
+        settings        = sublime.load_settings('MarkdownImagePaste.sublime-settings')
+        image_dir_name  = settings.get('image_dir', '.images')
+        prompt_alt_text = settings.get('prompt_alt_text', False)
+
+        file_dir = os.path.dirname(file_path)
+        img_dir  = os.path.join(file_dir, image_dir_name)
+
+        try:
+            os.makedirs(img_dir, exist_ok=True)
+        except OSError as e:
+            sublime.status_message(
+                f'MarkdownImagePaste: could not create image directory — {e}'
+            )
+            return
+
+        filename = f'image_{int(time.time() * 1000)}.{ext}'
+        img_path = os.path.join(img_dir, filename)
+
+        try:
+            with open(img_path, 'wb') as f:
+                f.write(image_data)
+        except OSError as e:
+            sublime.status_message(
+                f'MarkdownImagePaste: could not save image — {e}'
+            )
+            return
+
+        rel_path  = os.path.relpath(img_path, file_dir).replace('\\', '/')
+        md_syntax = f'![]({rel_path})'
+
+        # Insert at each cursor; iterate in reverse order to preserve offsets
+        # when multiple cursors are active
+        selections = sorted(self.view.sel(), key=lambda r: r.begin(), reverse=True)
+
+        for region in selections:
+            insert_point = region.begin()
+            self.view.replace(edit, region, md_syntax)
+
+            if prompt_alt_text:
+                cursor_pos = insert_point + 2        # between [ and ]
+            else:
+                cursor_pos = insert_point + len(md_syntax)  # after )
+
+            self.view.sel().subtract(region)
+            self.view.sel().add(sublime.Region(cursor_pos, cursor_pos))
+
+    def is_enabled(self):
+        if not self.view.sel():
+            return False
+        scope = self.view.scope_name(self.view.sel()[0].begin())
+        return 'text.html.markdown' in scope
