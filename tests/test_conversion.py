@@ -6,6 +6,7 @@ import sys
 import os
 import struct
 import types
+import zlib
 
 # --- Mock Sublime Text modules so we can import the plugin standalone ---
 _sublime = types.ModuleType('sublime')
@@ -84,20 +85,52 @@ def test_bitfields_compression_falls_back_to_bmp():
     assert result[:2] == b'BM', "BI_BITFIELDS DIB must fall back to BMP bytes"
 
 
-def test_bottom_up_dib_produces_correct_dimensions():
-    """Positive biHeight = bottom-up rows — verify flip is handled."""
-    width, height = 4, 3
+def test_bottom_up_dib_produces_correct_row_order():
+    """
+    Positive biHeight = bottom-up rows.
+    Row 0 in memory = bottom row visually = should appear LAST in PNG.
+    Row 1 in memory = top row visually = should appear FIRST in PNG.
+    We use distinct colors to verify the flip actually happened.
+    """
+    width, height = 2, 2
+    # bottom-up: positive biHeight
     header = struct.pack(
         '<IiiHHIIiiII',
-        40, width, height, 1, 24,   # positive biHeight = bottom-up
+        40, width, height, 1, 24,  # positive biHeight = bottom-up
         0, 0, 0, 0, 0, 0,
     )
+    # 24-bit BGR, row stride padded to 4 bytes
+    # row 0 (memory) = bottom row visually = all red (BGR: 0x00, 0x00, 0xFF)
+    # row 1 (memory) = top row visually    = all green (BGR: 0x00, 0xFF, 0x00)
     row_stride = ((width * 3 + 3) & ~3)
-    dib = header + bytes(row_stride * height)
+    row0_bottom = b'\x00\x00\xff' * width  # red in BGR
+    row1_top    = b'\x00\xff\x00' * width  # green in BGR
+    # Pad rows to stride
+    row0_bottom = row0_bottom + b'\x00' * (row_stride - len(row0_bottom))
+    row1_top    = row1_top    + b'\x00' * (row_stride - len(row1_top))
+    dib = header + row0_bottom + row1_top
+
     result = mip._dib_to_png(dib)
+
+    # Verify PNG dimensions
     w, h, _, _ = parse_png_ihdr(result)
     assert w == width
     assert h == height
+
+    # Decompress IDAT and verify first scanline is green (top row after flip)
+    # PNG IDAT chunk starts at byte 8+25+12 = 45 (sig + IHDR chunk)
+    # chunk layout: 4 len + 4 type + data + 4 crc
+    ihdr_chunk_len = struct.unpack_from('>I', result, 8)[0]
+    idat_offset = 8 + 4 + 4 + ihdr_chunk_len + 4  # after sig + IHDR chunk
+    idat_data_len = struct.unpack_from('>I', result, idat_offset)[0]
+    idat_data = result[idat_offset + 8: idat_offset + 8 + idat_data_len]
+    raw = zlib.decompress(idat_data)
+
+    # First scanline: filter byte (1 byte) + RGB pixels (width * 3 bytes)
+    first_row_pixels = raw[1: 1 + width * 3]
+    # Green in RGB is (0, 255, 0)
+    assert first_row_pixels == b'\x00\xff\x00' * width, \
+        f"First PNG row should be green (top row after bottom-up flip), got {first_row_pixels.hex()}"
 
 
 # ---------------------------------------------------------------------------

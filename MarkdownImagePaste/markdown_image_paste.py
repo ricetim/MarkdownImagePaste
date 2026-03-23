@@ -144,7 +144,7 @@ def _dib_to_png(dib_data):
     height = abs(biHeight)
     flip   = biHeight > 0  # positive biHeight = bottom-up row order
 
-    pixel_offset   = 40  # no color table for 24/32-bit BI_RGB
+    pixel_offset   = biSize + biClrUsed * 4
     bytes_per_pixel = biBitCount // 8
     row_stride      = ((width * bytes_per_pixel + 3) & ~3)
 
