@@ -19,13 +19,36 @@ import sublime_plugin
 # Windows clipboard constants
 # ---------------------------------------------------------------------------
 
-_CF_DIB = 8
+_CF_DIB   = 8
+_CF_DIBV5 = 17
 
 # Guard all ctypes.windll usage — windll does not exist on Linux/Mac
 try:
-    _user32 = ctypes.windll.user32
+    _user32   = ctypes.windll.user32
     _kernel32 = ctypes.windll.kernel32
-    # CF_PNG is a registered (non-standard) format number — resolved once at import
+
+    # Declare correct types for every API we call.
+    # On 64-bit Windows HANDLE is a 64-bit pointer; without c_void_p ctypes
+    # truncates it to 32 bits and corrupts the value on the next call.
+    _user32.OpenClipboard.argtypes              = [ctypes.wintypes.HWND]
+    _user32.OpenClipboard.restype               = ctypes.wintypes.BOOL
+    _user32.CloseClipboard.argtypes             = []
+    _user32.CloseClipboard.restype              = ctypes.wintypes.BOOL
+    _user32.GetClipboardData.argtypes           = [ctypes.wintypes.UINT]
+    _user32.GetClipboardData.restype            = ctypes.c_void_p   # HANDLE
+    _user32.IsClipboardFormatAvailable.argtypes = [ctypes.wintypes.UINT]
+    _user32.IsClipboardFormatAvailable.restype  = ctypes.wintypes.BOOL
+    _user32.RegisterClipboardFormatW.argtypes   = [ctypes.c_wchar_p]
+    _user32.RegisterClipboardFormatW.restype    = ctypes.wintypes.UINT
+
+    _kernel32.GlobalSize.argtypes   = [ctypes.c_void_p]
+    _kernel32.GlobalSize.restype    = ctypes.c_size_t
+    _kernel32.GlobalLock.argtypes   = [ctypes.c_void_p]
+    _kernel32.GlobalLock.restype    = ctypes.c_void_p
+    _kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    _kernel32.GlobalUnlock.restype  = ctypes.wintypes.BOOL
+
+    # CF_PNG is a registered (non-standard) format — resolved once at import
     try:
         _CF_PNG = _user32.RegisterClipboardFormatW("PNG")
     except Exception:
@@ -33,10 +56,10 @@ try:
     _WINDOWS = True
 except AttributeError:
     # Non-Windows platform (Linux, macOS) — clipboard functions unavailable
-    _user32 = None
+    _user32   = None
     _kernel32 = None
-    _CF_PNG = 0
-    _WINDOWS = False
+    _CF_PNG   = 0
+    _WINDOWS  = False
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +75,8 @@ def _clipboard_has_image():
         return False
     return bool(
         (_CF_PNG and _user32.IsClipboardFormatAvailable(_CF_PNG)) or
-        _user32.IsClipboardFormatAvailable(_CF_DIB)
+        _user32.IsClipboardFormatAvailable(_CF_DIB) or
+        _user32.IsClipboardFormatAvailable(_CF_DIBV5)
     )
 
 
@@ -105,13 +129,16 @@ def _get_clipboard_image():
         if data and data[:8] == b'\x89PNG\r\n\x1a\n':
             return data, 'png'
 
-    # CF_DIB: raw Device Independent Bitmap — convert to PNG (or BMP fallback)
-    if _user32.IsClipboardFormatAvailable(_CF_DIB):
-        dib = _read_clipboard_format(_CF_DIB)
-        if dib:
-            result = _dib_to_png(dib)
-            ext = 'bmp' if result[:2] == b'BM' else 'png'
-            return result, ext
+    # CF_DIB then CF_DIBV5: raw bitmap that needs conversion.
+    # CF_DIBV5 is tried as fallback when CF_DIB uses delayed rendering and
+    # returns NULL even though IsClipboardFormatAvailable returned True.
+    for fmt in (_CF_DIB, _CF_DIBV5):
+        if _user32.IsClipboardFormatAvailable(fmt):
+            dib = _read_clipboard_format(fmt)
+            if dib:
+                result = _dib_to_png(dib)
+                ext = 'bmp' if result[:2] == b'BM' else 'png'
+                return result, ext
 
     return None, None
 
