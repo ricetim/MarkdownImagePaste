@@ -280,6 +280,7 @@ class MarkdownImagePasteCommand(sublime_plugin.TextCommand):
         # Insert at each cursor; iterate in reverse order to preserve offsets
         # when multiple cursors are active
         selections = sorted(self.view.sel(), key=lambda r: r.begin(), reverse=True)
+        new_cursors = []
 
         for region in selections:
             insert_point = region.begin()
@@ -290,8 +291,11 @@ class MarkdownImagePasteCommand(sublime_plugin.TextCommand):
             else:
                 cursor_pos = insert_point + len(md_syntax)  # after )
 
-            self.view.sel().subtract(region)
-            self.view.sel().add(sublime.Region(cursor_pos, cursor_pos))
+            new_cursors.append(sublime.Region(cursor_pos, cursor_pos))
+
+        self.view.sel().clear()
+        for cursor in new_cursors:
+            self.view.sel().add(cursor)
 
     def is_enabled(self):
         if not self.view.sel():
