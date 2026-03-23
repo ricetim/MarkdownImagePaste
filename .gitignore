@@ -1,0 +1,4 @@
+*.pyc
+__pycache__/
+package-metadata.json
+.pytest_cache/

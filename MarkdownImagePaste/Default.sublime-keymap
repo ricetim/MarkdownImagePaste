@@ -1,0 +1,13 @@
+[
+    {
+        "keys": ["ctrl+v"],
+        "command": "markdown_image_paste",
+        "context": [
+            {
+                "key": "selector",
+                "operator": "equal",
+                "operand": "text.html.markdown"
+            }
+        ]
+    }
+]

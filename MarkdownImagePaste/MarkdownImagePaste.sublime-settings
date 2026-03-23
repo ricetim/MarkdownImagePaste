@@ -1,0 +1,7 @@
+{
+    // Subdirectory name for saved images, relative to the markdown file
+    "image_dir": ".images",
+    // When true, cursor lands between [] after insert (for typing alt text)
+    // When false (default), cursor lands after the closing )
+    "prompt_alt_text": false
+}
