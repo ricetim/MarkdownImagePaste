@@ -31,6 +31,8 @@ Copy the `MarkdownImagePaste/` folder into your Sublime Text packages directory:
 %APPDATA%\Sublime Text\Packages\
 ```
 
+> **Important:** Make sure to include the `.python-version` file. ST4 uses it to select Python 3.8. Omitting it will cause import errors.
+
 ## Configuration
 
 Open `Preferences → Package Settings → MarkdownImagePaste → Settings`:
@@ -45,6 +47,8 @@ Open `Preferences → Package Settings → MarkdownImagePaste → Settings`:
     "prompt_alt_text": false
 }
 ```
+
+> **Note:** `image_dir` is used as a path component relative to your markdown file. Do not set it to an absolute path or a value containing `..`.
 
 ## License
 

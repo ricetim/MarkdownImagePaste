@@ -144,6 +144,9 @@ def _dib_to_png(dib_data):
     height = abs(biHeight)
     flip   = biHeight > 0  # positive biHeight = bottom-up row order
 
+    if width <= 0 or height == 0:
+        return _dib_to_bmp_bytes(dib_data)
+
     pixel_offset   = biSize + biClrUsed * 4
     bytes_per_pixel = biBitCount // 8
     row_stride      = ((width * bytes_per_pixel + 3) & ~3)
